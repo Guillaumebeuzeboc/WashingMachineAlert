@@ -52,13 +52,10 @@ unsigned long microSeconds;
 double vReal[SAMPLES]; // create vector of size SAMPLES to hold real values
 double vImag[SAMPLES]; // create vector of size SAMPLES to hold imaginary values
 
-uint8_t received_starting = 0;
-uint8_t received_ending = 0;
 unsigned int sum = 0;
 ////
 
 const int potPin = 34;
-unsigned long last = micros();
 
 void publishMessage(String message) {
   WiFiClientSecure *client = new WiFiClientSecure;
@@ -127,7 +124,7 @@ void loop() {
 
     vReal[i] = analogRead(potPin); // Reads the value from analog pin 0 (A0),
                                    // quantize it and save it as a real term.
-    vImag[i] = 0; // Makes imaginary term 0 always
+    vImag[i] = 0;                  // Makes imaginary term 0 always
     sum += vReal[i];
     /*remaining wait time between samples if necessary*/
     while (micros() < (microSeconds + samplingPeriod)) {
@@ -151,31 +148,18 @@ void loop() {
 
   // Starting washing machine frequency
   if (peak < 2700 && peak > 2600) {
-    if (received_starting > -1) {
-      Serial.println("Washing machine started!");
-      Serial.print("sum: ");
-      Serial.println(sum);
-      publishMessage("Washing machine started!");
-      // wait for 30 sec so we don't double detect
-      delay(30000);
-    }
-    ++received_starting;
+    Serial.println("Washing machine started!");
+    Serial.print("sum: ");
+    Serial.println(sum);
+    publishMessage("Washing machine started!");
+    // wait for 60 sec so we don't double detect
+    delay(60000);
   } else {
-    received_starting = 0;
-
-    // if(peak < 2000 && peak > 1863){
-    // if(peak < 1800 && peak > 1700){
     if (peak < 2000 && peak > 1930) {
-      if (received_ending > -1) {
-        Serial.println("Washing machine ended!");
-        publishMessage("Washing machine ended!");
-        // wait for 60 sec
-        delay(60000);
-      }
-
-      ++received_ending;
-    } else {
-      received_ending = 0;
+      Serial.println("Washing machine ended!");
+      publishMessage("Washing machine ended!");
+      // wait for 60 sec so we don't double detect
+      delay(60000);
     }
   }
 
