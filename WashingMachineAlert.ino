@@ -7,6 +7,7 @@
 
 #include <WiFiClientSecure.h>
 #include <arduinoFFT.h>
+#include <jled.h>
 
 #include "config.h"
 
@@ -56,6 +57,15 @@ unsigned int sum = 0;
 ////
 
 const int potPin = 34;
+const int led_pin = 2;
+auto led_ok = JLed(led_pin).Breathe(2000).DelayAfter(1000).Forever();
+auto led_no_internet = JLed(led_pin).Blink(500, 500).Forever();
+
+void keepWifiOk(){
+  while ((WiFiMulti.run() != WL_CONNECTED)) {
+    led_no_internet.Update();
+  }
+}
 
 void publishMessage(String message) {
   WiFiClientSecure *client = new WiFiClientSecure;
@@ -69,24 +79,23 @@ void publishMessage(String message) {
         Serial.print("[HTTPS] POST...\n");
         // start connection and send HTTP header
         https.addHeader("Content-Type", "application/json");
-        const int httpCode =
-            https.POST(String("{\"content\": \"") + message + String("\"}"));
+        int httpCode = 0;
+        while(httpCode <= 0){
+              httpCode = https.POST(String("{\"content\": \"") + message + String("\"}"));
+              if(httpCode <= 0){
+                Serial.printf("[HTTPS] POST... failed, error: %s\n", https.errorToString(httpCode).c_str());
+                keepWifiOk();
+              }
+        }
+        // HTTP header has been send and Server response header has been
+        // handled
+        Serial.printf("[HTTPS] POST... code: %d\n", httpCode);
 
-        // httpCode will be negative on error
-        if (httpCode > 0) {
-          // HTTP header has been send and Server response header has been
-          // handled
-          Serial.printf("[HTTPS] POST... code: %d\n", httpCode);
-
-          // file found at server
-          if (httpCode == HTTP_CODE_OK ||
-              httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+        // file found at server
+        if (httpCode == HTTP_CODE_OK ||
+            httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
             String payload = https.getString();
             Serial.println(payload);
-          }
-        } else {
-          Serial.printf("[HTTPS] POST... failed, error: %s\n",
-                        https.errorToString(httpCode).c_str());
         }
 
         https.end();
@@ -116,9 +125,11 @@ void setup() {
 }
 
 void loop() {
+  keepWifiOk();
   sum = 0;
   /*Sample SAMPLES times*/
   for (int i = 0; i < SAMPLES; i++) {
+    led_ok.Update();
     microSeconds = micros(); // Returns the number of microseconds since the
                              // Arduino board began running the current script.
 
@@ -134,7 +145,7 @@ void loop() {
   sum /= SAMPLES;
 
   // filtering too low and saturated volumes
-  if (sum < 400 || sum > 3800) {
+  if (sum < 200 || sum > 4000) {
     return;
   }
 
@@ -148,18 +159,18 @@ void loop() {
 
   // Starting washing machine frequency
   if (peak < 2700 && peak > 2600) {
-    Serial.println("Washing machine started!");
-    Serial.print("sum: ");
-    Serial.println(sum);
-    publishMessage("Washing machine started!");
-    // wait for 60 sec so we don't double detect
-    delay(60000);
-  } else {
-    if (peak < 2000 && peak > 1930) {
-      Serial.println("Washing machine ended!");
-      publishMessage("Washing machine ended!");
+      Serial.println("Washing machine started!");
+      Serial.print("sum: ");
+      Serial.println(sum);
+      publishMessage("Washing machine started!");
       // wait for 60 sec so we don't double detect
       delay(60000);
+  } else {
+    if (peak < 2000 && peak > 1930) {
+        Serial.println("Washing machine ended!");
+        publishMessage("Washing machine ended!");
+        // wait for 60 sec so we don't double detect
+        delay(60000);
     }
   }
 
