@@ -8,6 +8,7 @@
 #include <WiFiClientSecure.h>
 #include <arduinoFFT.h>
 #include <jled.h>
+#include <CircularBuffer.h>
 
 #include "config.h"
 
@@ -41,7 +42,7 @@ WiFiMulti WiFiMulti;
 
 //// FFT vars
 #define SAMPLES                                                                \
-  2048 // SAMPLES-pt FFT. Must be a base 2 number. Limited by flash memory.
+  256 // SAMPLES-pt FFT. Must be a base 2 number. Limited by flash memory.
 #define SAMPLING_FREQUENCY                                                     \
   7000 // Ts = Based on Nyquist, must be 2 times the highest expected frequency.
 
@@ -60,11 +61,17 @@ const int potPin = 34;
 const int led_pin = 2;
 auto led_ok = JLed(led_pin).Breathe(2000).DelayAfter(1000).Forever();
 auto led_no_internet = JLed(led_pin).Blink(500, 500).Forever();
+int last_freq = 0;
+CircularBuffer<int,4> freqs;
 
 void keepWifiOk(){
   while ((WiFiMulti.run() != WL_CONNECTED)) {
     led_no_internet.Update();
   }
+}
+
+bool matchFreq(int reference, const int& frequency){
+  return ((reference -20)< frequency ) && (frequency <(reference + 20));
 }
 
 void publishMessage(String message) {
@@ -73,7 +80,6 @@ void publishMessage(String message) {
     client->setCACert(rootCACertificate);
     {
       HTTPClient https;
-
       Serial.print("[HTTPS] begin...\n");
       if (https.begin(*client, DISCORD_BOT_HTTPS_URL)) { // HTTPS
         Serial.print("[HTTPS] POST...\n");
@@ -127,6 +133,8 @@ void setup() {
 void loop() {
   keepWifiOk();
   sum = 0;
+
+  int max_value = 0;
   /*Sample SAMPLES times*/
   for (int i = 0; i < SAMPLES; i++) {
     led_ok.Update();
@@ -135,8 +143,11 @@ void loop() {
 
     vReal[i] = analogRead(potPin); // Reads the value from analog pin 0 (A0),
                                    // quantize it and save it as a real term.
-    vImag[i] = 0;                  // Makes imaginary term 0 always
+    vImag[i] = 0; // Makes imaginary term 0 always
     sum += vReal[i];
+    if(vReal[i] > max_value){
+      max_value = vReal[i];
+    }
     /*remaining wait time between samples if necessary*/
     while (micros() < (microSeconds + samplingPeriod)) {
       // do nothing
@@ -144,8 +155,9 @@ void loop() {
   }
   sum /= SAMPLES;
 
-  // filtering too low and saturated volumes
-  if (sum < 200 || sum > 4000) {
+  if(max_value < 1800){
+    last_freq = 0;
+    if(last_freq = 0){ freqs.push(0);}
     return;
   }
 
@@ -155,27 +167,37 @@ void loop() {
   FFT.ComplexToMagnitude(vReal, vImag, SAMPLES);
 
   /*Find peak frequency and print peak*/
-  const double peak = FFT.MajorPeak(vReal, SAMPLES, SAMPLING_FREQUENCY);
+  double peak = FFT.MajorPeak(vReal, SAMPLES, SAMPLING_FREQUENCY);
+
+  freqs.push(peak);
 
   // Starting washing machine frequency
-  if (peak < 2700 && peak > 2600) {
+  if ( matchFreq(2010, freqs[0]) && matchFreq(2010, freqs[1]) && matchFreq(2705, freqs[2]) && matchFreq(2705, freqs[3])) {
       Serial.println("Washing machine started!");
       Serial.print("sum: ");
       Serial.println(sum);
       publishMessage("Washing machine started!");
+      peak = 0;
+      freqs.clear();
       // wait for 60 sec so we don't double detect
       delay(60000);
   } else {
-    if (peak < 2000 && peak > 1930) {
+    if (((matchFreq(2705, freqs[0]) && matchFreq(2705, freqs[1])) || (matchFreq(1350, freqs[0]) && matchFreq(1350, freqs[1]))) && matchFreq(1800, freqs[2]) && matchFreq(1800, freqs[3])) {
         Serial.println("Washing machine ended!");
         publishMessage("Washing machine ended!");
+        peak = 0;
+        freqs.clear();
         // wait for 60 sec so we don't double detect
         delay(60000);
     }
   }
 
+  last_freq = peak;
+
   Serial.print("peak: ");
   Serial.print(peak); // Print out the most dominant frequency.
   Serial.print(" hz, sum: ");
-  Serial.println(sum);
+  Serial.print(sum);
+  Serial.print("  , max: ");
+  Serial.println(max_value);
 }
