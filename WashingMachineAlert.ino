@@ -64,10 +64,20 @@ auto led_no_internet = JLed(led_pin).Blink(500, 500).Forever();
 int last_freq = 0;
 CircularBuffer<int,4> freqs;
 
-void keepWifiOk(){
-  while ((WiFiMulti.run() != WL_CONNECTED)) {
+bool keepWifiOk(){
+  const auto current_wifi_status{WiFi.status()};
+
+  if(current_wifi_status == WL_CONNECTED){
+    last_time_connected = millis();
+  }else{
     led_no_internet.Update();
+    if((millis() - last_time_connected) > 1000){
+      WiFiMulti.run();
+      last_time_connected = millis();
   }
+  }
+
+  return current_wifi_status == WL_CONNECTED;
 }
 
 bool matchFreq(int reference, const int& frequency){
@@ -90,7 +100,7 @@ void publishMessage(String message) {
               httpCode = https.POST(String("{\"content\": \"") + message + String("\"}"));
               if(httpCode <= 0){
                 Serial.printf("[HTTPS] POST... failed, error: %s\n", https.errorToString(httpCode).c_str());
-                keepWifiOk();
+                while(!keepWifiOk()){};
               }
         }
         // HTTP header has been send and Server response header has been
@@ -131,13 +141,13 @@ void setup() {
 }
 
 void loop() {
-  keepWifiOk();
+  const auto wifi_ok = keepWifiOk();
   sum = 0;
 
   int max_value = 0;
   /*Sample SAMPLES times*/
   for (int i = 0; i < SAMPLES; i++) {
-    led_ok.Update();
+    if(wifi_ok) led_ok.Update();
     microSeconds = micros(); // Returns the number of microseconds since the
                              // Arduino board began running the current script.
 
