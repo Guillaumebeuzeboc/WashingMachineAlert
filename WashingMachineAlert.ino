@@ -63,6 +63,7 @@ auto led_ok = JLed(led_pin).Breathe(2000).DelayAfter(1000).Forever();
 auto led_no_internet = JLed(led_pin).Blink(500, 500).Forever();
 int last_freq = 0;
 CircularBuffer<int,4> freqs;
+unsigned long last_time_connected{0};
 
 bool keepWifiOk(){
   const auto current_wifi_status{WiFi.status()};
