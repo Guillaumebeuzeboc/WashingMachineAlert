@@ -72,8 +72,8 @@ bool keepWifiOk(){
     last_time_connected = millis();
   }else{
     led_no_internet.Update();
-    if((millis() - last_time_connected) > 1000){
-      WiFiMulti.run();
+    if((millis() - last_time_connected) > 10000){
+      WiFi.reconnect();
       last_time_connected = millis();
   }
   }
@@ -166,7 +166,7 @@ void loop() {
   }
   sum /= SAMPLES;
 
-  if(max_value < 1800){
+  if(max_value < 1600){
     last_freq = 0;
     if(last_freq = 0){ freqs.push(0);}
     return;
