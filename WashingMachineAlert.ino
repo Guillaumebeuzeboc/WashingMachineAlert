@@ -13,6 +13,7 @@
 #include "config.h"
 
 // get it with openssl s_client -showcerts -connect discordapp.com:443
+// This certificated might be out to date.
 const char *rootCACertificate =
     "-----BEGIN CERTIFICATE-----\n"
     "MIIDzTCCArWgAwIBAgIQCjeHZF5ftIwiTv0b7RQMPDANBgkqhkiG9w0BAQsFADBa\n"
@@ -125,7 +126,49 @@ void publishMessage(String message) {
     Serial.println("Unable to create client");
   }
 }
+void publishHomeAssistantMessage(String f) {
+  WiFiClient *client = new WiFiClient;
+  if (client) {
+    {
+      HTTPClient http;
+      Serial.print("[HTTPS] begin...\n");
+      if (http.begin(*client, HOME_ASSISTANT_HTTP_URL)) { // HTTP
+        Serial.print("[HTTPS] POST...\n");
+        // start connection and send HTTP header
+        http.addHeader("Authorization", String("Bearer ") + String(HOME_ASSISTANT_TOKEN));
+        http.addHeader("Content-Type", "application/json");
 
+        int httpCode = 0;
+        int random_state = random(255);
+        while(httpCode <= 0){
+              // We must integrate a random so home assistant sends a notification.
+              httpCode = http.POST(String("{\"state\": \"") + String(random_state) + String("\"}"));
+              if(httpCode <= 0){
+                Serial.printf("[HTTPS] POST... failed, error: %s\n", http.errorToString(httpCode).c_str());
+                while(!keepWifiOk()){};
+              }
+        }
+        // HTTP header has been send and Server response header has been
+        // handled
+        Serial.printf("[HTTPS] POST... code: %d\n", httpCode);
+
+        // file found at server
+        if (httpCode == HTTP_CODE_OK ||
+            httpCode == HTTP_CODE_MOVED_PERMANENTLY) {
+            String payload = http.getString();
+            Serial.println(payload);
+        }
+
+        http.end();
+      } else {
+        Serial.printf("[HTTPS] Unable to connect\n");
+      }
+    }
+    delete client;
+  } else {
+    Serial.println("Unable to create client");
+  }
+}
 void setup() {
 
   Serial.begin(115200);
@@ -139,6 +182,7 @@ void setup() {
   Serial.println("connected");
   samplingPeriod =
       round(1000000.0 / SAMPLING_FREQUENCY); // Period in microseconds
+
 }
 
 void loop() {
@@ -187,7 +231,7 @@ void loop() {
       Serial.println("Washing machine started!");
       Serial.print("sum: ");
       Serial.println(sum);
-      publishMessage("Washing machine started!");
+      publishHomeAssistantMessage("Washing machine started!");
       peak = 0;
       freqs.clear();
       // wait for 60 sec so we don't double detect
@@ -195,7 +239,7 @@ void loop() {
   } else {
     if (((matchFreq(2705, freqs[0]) && matchFreq(2705, freqs[1])) || (matchFreq(1350, freqs[0]) && matchFreq(1350, freqs[1]))) && matchFreq(1800, freqs[2]) && matchFreq(1800, freqs[3])) {
         Serial.println("Washing machine ended!");
-        publishMessage("Washing machine ended!");
+        publishHomeAssistantMessage("Washing machine ended!");
         peak = 0;
         freqs.clear();
         // wait for 60 sec so we don't double detect
